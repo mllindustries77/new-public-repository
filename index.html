@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="hy">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ապրանքներ</title>
+<style>
+:root{--bg:#f3f6f7;--card:#fff;--ink:#16212b;--mute:#5d6b76;--line:#cfd8dd;--acc:#0f6b6b;--hover:#e6f1f1;color-scheme:light dark}
+@media(prefers-color-scheme:dark){:root{--bg:#10171c;--card:#18222a;--ink:#e8eef1;--mute:#93a3ad;--line:#2d3b45;--acc:#4fb3b3;--hover:#21313a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:max(16px,env(safe-area-inset-top)) 16px max(16px,env(safe-area-inset-bottom))}
+main{max-width:520px;margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px}
+label{display:block;font-weight:600;margin:16px 0 6px}
+label:first-of-type{margin-top:0}
+input[type=text]{width:100%;font:inherit;color:inherit;background:transparent;border:1px solid var(--line);border-radius:8px;padding:11px 12px}
+input:focus,button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+#list{max-height:240px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px}
+#list div{padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--line)}
+#list div:last-child{border-bottom:0}
+#list div:hover{background:var(--hover)}
+#list .none,#list .more{color:var(--mute);cursor:default;font-size:14px}
+#list .none:hover,#list .more:hover{background:none}
+#chosen{margin-top:8px;color:var(--acc);font-weight:600;min-height:1.5em}
+button{margin-top:20px;width:100%;font:inherit;font-weight:600;color:#fff;background:var(--acc);border:0;border-radius:8px;padding:13px;cursor:pointer}
+@media(prefers-color-scheme:dark){button{color:#10171c}}
+button:disabled{opacity:.5;cursor:default}
+#msg{margin-top:12px;min-height:1.5em;color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+  <label for="note">Նշում</label>
+  <input type="text" id="note" autocomplete="off">
+
+  <label for="q">Ապրանքներ</label>
+  <input type="text" id="q" placeholder="Գրեք որոնման համար..." autocomplete="off">
+  <div id="list" hidden></div>
+  <div id="chosen"></div>
+
+  <button id="send" type="button">Ուղարկել</button>
+  <div id="msg" role="status"></div>
+</main>
+
+<script>
+// Paste your Apps Script web app address (ends with /exec) between the quotes:
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw0qzMzwj4oLl_T6pu6uCMyJEal7b2_2DgTtIVhLHsEPxo5nQtcBKQP_4Dh8H73sn3r/exec";
+const MAX_SHOWN = 100;
+
+let items = [], chosen = "";
+const $ = id => document.getElementById(id);
+const norm = s => s.normalize("NFC").toLowerCase();
+
+// Show the saved copy of the list right away, then refresh it from the sheet.
+try { items = JSON.parse(localStorage.getItem("items") || "[]"); } catch (e) {}
+$("msg").textContent = items.length ? "" : "Ցանկը բեռնվում է...";
+fetch(SCRIPT_URL).then(r => r.json()).then(data => {
+  items = data;
+  $("msg").textContent = "";
+  try { localStorage.setItem("items", JSON.stringify(data)); } catch (e) {}
+  if (!$("list").hidden) render();
+}).catch(() => {
+  if (!items.length) $("msg").textContent = "Ցանկը չբեռնվեց։ Թարմացրեք էջը։";
+});
+
+function render() {
+  const words = norm($("q").value).split(/\s+/).filter(Boolean);
+  const hits = items.filter(it => { const n = norm(it); return words.every(w => n.includes(w)); });
+  const list = $("list");
+  list.innerHTML = "";
+  hits.slice(0, MAX_SHOWN).forEach(it => {
+    const d = document.createElement("div");
+    d.textContent = it;
+    d.onclick = () => pick(it);
+    list.appendChild(d);
+  });
+  if (!hits.length) list.innerHTML = '<div class="none">Ոչինչ չգտնվեց</div>';
+  else if (hits.length > MAX_SHOWN) {
+    const m = document.createElement("div");
+    m.className = "more";
+    m.textContent = "Գտնվել է " + hits.length + "։ Գրեք ավելին՝ ցանկը նեղացնելու համար։";
+    list.appendChild(m);
+  }
+  list.hidden = false;
+}
+
+function pick(it) {
+  chosen = it;
+  $("q").value = it;
+  $("chosen").textContent = "✓ " + it;
+  $("list").hidden = true;
+}
+
+$("q").addEventListener("input", () => { chosen = ""; $("chosen").textContent = ""; render(); });
+$("q").addEventListener("focus", () => { if (items.length) render(); });
+
+$("send").onclick = () => {
+  if (!chosen) { $("msg").textContent = "Ընտրեք ապրանք ցանկից։"; return; }
+  $("send").disabled = true;
+  $("msg").textContent = "Ուղարկվում է...";
+  const body = new URLSearchParams({ note: $("note").value, item: chosen });
+  fetch(SCRIPT_URL, { method: "POST", body, mode: "no-cors" })
+    .then(() => {
+      $("msg").textContent = "Ուղարկված է։";
+      $("note").value = ""; $("q").value = ""; $("chosen").textContent = ""; chosen = "";
+    })
+    .catch(() => { $("msg").textContent = "Չուղարկվեց։ Փորձեք նորից։"; })
+    .finally(() => { $("send").disabled = false; });
+};
+</script>
+</body>
+</html>
